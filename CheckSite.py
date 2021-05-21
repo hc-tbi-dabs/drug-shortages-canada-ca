@@ -1,8 +1,7 @@
 
 import requests
 import json
-import stripe
-from pandas.io.json import json_normalize
+#from pandas.io.json import json_normalize
 
 
 def pullObjectFromWebsite ():
@@ -25,7 +24,7 @@ def pullObjectFromWebsite ():
 
     if login_request.status_code == 200:
         authToken = login_request.headers['auth-token']
-        searchRequest = requests.get('https://www.drugshortagescanada.ca/api/v1/search?term=0011223344&page=2',
+        searchRequest = requests.get('https://www.drugshortagescanada.ca/api/v1/search?term=0011223344',
                                      headers={"auth-token": authToken}, params=parameters)
 
 
@@ -34,30 +33,24 @@ def pullObjectFromWebsite ():
         total_pages = int(r['total_pages'])
 
         # results will be appended to this list
-        all_time_entries = []
+        #all_time_entries = []
 
         # loop through all pages and return JSON object
-        for page in range(1, total_pages+1):
-            url = "https://www.drugshortagescanada.ca/api/v1/search?page=" + str(page)
-            response = requests.get(url=url, headers={"auth-token": authToken}, params=parameters).json()
-            all_time_entries.append(response)
-            page =page + 1
+        #for page in range(0, total_pages):
+          #  url = "https://www.drugshortagescanada.ca/api/v1/search?limit=20&offset=" + str(page*20)
+           # response = requests.get(url=url, headers={"auth-token": authToken}, params=parameters).json()
+            #all_time_entries.append(response)
+            #page =page + 1
 
 
         # prettify JSON
         #data = json.dumps(all_time_entries, sort_keys=True, indent=4)
         #print(data)
-        return requests.get("https://www.drugshortagescanada.ca/api/v1/search", headers={"auth-token": authToken}, params=parameters).json()
-        return all_time_entries
+        return requests.get("https://www.drugshortagescanada.ca/api/v1/search?limit="+ str(total_pages*20), headers={"auth-token": authToken}, params=parameters).json()
+        #return all_time_entries
 
 
 
-#customers = stripe.Data.list(limit=40)
-#for customer in customers.auto_paging_iter(): # Do something with customer
- #   objectReturned = pullObjectFromWebsite()
- #   print(*objectReturned, sep="\n")
-  #  data = json.dumps(objectReturned, sort_keys=True, indent=4)
-  #  print(data)
 
 import pandas as pd
 obj =pullObjectFromWebsite ()
@@ -72,7 +65,8 @@ DB= data[data['status'] != 'resolved']
 print (DB)
 
 subsetDB = DB[["drug.brand_name", "company_name", "status", "drug_strength", "shortage_reason.en_reason", "shortage_reason.fr_reason", "en_discontinuation_comments", "fr_discontinuation_comments"]]
-#print (subsetDB)
+print (subsetDB)
+
 #adapted from https://pythonexamples.org/pandas-render-dataframe-as-html-table/#:~:text=To%20render%20a%20Pandas%20DataFrame,thead%3E%20table%20head%20html%20element.
 html = subsetDB.to_html()
 #print(html)
