@@ -64,6 +64,18 @@ class DrugShortages(Website):
         # write the subsets into the database
         self.writeDB(subsetDB, subsetDB2)
 
+        #system out print to check that there is something
+        conn = sqlite3.connect('Shortages.db')
+        c = conn.cursor()
+        c.execute("SELECT * FROM Drug_shortages_and_discontinuations")
+
+        for row in c.fetchall():
+            print(row)
+
+        c.execute("SELECT * FROM Resolved_Date")
+        for row in c.fetchall():
+            print(row)
+
         # run to remove all record older than X days from the table
         self.cleanup()
 
@@ -180,7 +192,7 @@ class DrugShortages(Website):
         return True
 
 
-    def create_tables(subsetDB):
+    def create_tables(self, subsetDB):
         """Create tables from subset/JSON object from the database?
 
         If there is no table then create a tables (for the first time this is ever run to set up the database)
@@ -195,16 +207,32 @@ class DrugShortages(Website):
         conn = sqlite3.connect('Shortages.db')
         c = conn.cursor()
         conn.commit()
-        c.execute(''' SELECT count(name) FROM sqlite_master WHERE type='table' AND name='Drug_shortages_and_discontinuations' ''')
+        # adapted from https://www.codegrepper.com/code-examples/sql/convert+sqlite+table+to+pandas+dataframe
+        query = conn.execute("SELECT * From Drug_shortages_and_discontinuations")
+        cols = [column[0] for column in query.description]
+        fromDB = pd.DataFrame.from_records(data=query.fetchall(), columns=cols)
+        rows_to_append = pd.DataFrame()
+        c.execute(''' SELECT count(name) FROM sqlite_master 
+            WHERE type='table' AND name='Drug_shortages_and_discontinuations' ''')
 
         # if the count is 1, then table exists
         if c.fetchone()[0] == 1:
             # if table exists append the subset onto existing table
-            # if the entries are already in the table nothing should be added, if id already exists then do not enter it
-
+            # if the entries are already in the table nothing should be added
+            # if the id already exists then do not enter it
+            for index, row in subsetDB.iterrows():
+                dfIfReocrdUpdated = subsetDB.loc[
+                    (fromDB["drug_strength"] == row[["drug_strength"]][0]) &
+                    (fromDB["drug.brand_name"] == row[["drug.brand_name"]][0]) &
+                    (fromDB["company_name"] == row[["company_name"]][0]) & (fromDB["id"] == row[["id"]][0])]
+                if dfIfReocrdUpdated.shape[0] == 0:
+                    # there is no row in the DB with this id and drug company then add row to the table
+                    rows_to_append = rows_to_append.append(dfIfReocrdUpdated)
         else:
             # since the table DNE then we should create it based on the JSON object
             subsetDB.to_sql('Drug_shortages_and_discontinuations', conn, if_exists="replace", index=True)
+
+        rows_to_append.to_sql('Drug_shortages_and_discontinuations', conn, if_exists="append")
 
         try:
             c.execute("""CREATE TABLE IF NOT EXISTS Resolved_Date
@@ -216,7 +244,7 @@ class DrugShortages(Website):
         c.close()
         return True
 
-    def cleanup (self, limit_stored_days=200,  limit_stored_after_resolved_days=200):
+    def cleanup(self, limit_stored_days=200,  limit_stored_after_resolved_days=200):
         ''' Cleans up the data base if it has it has entries that are stored longer than X days
         Cleans up records that have been resolved for longer than Y days
 
