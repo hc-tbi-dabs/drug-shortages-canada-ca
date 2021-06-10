@@ -33,7 +33,7 @@ class Website(ABC, threading.Thread):
 
 class DrugShortages(Website):
     def run(self):
-        get_obj_from_drug_shortage_site =self.getAPI(start_month="5", start_day="10", end_month="5", end_day="10")
+        get_obj_from_drug_shortage_site =self.getAPI(start_month=5, start_day=10, end_month=5, end_day=10)
         data_from_site = pd.DataFrame.from_dict(pd.json_normalize(get_obj_from_drug_shortage_site['data']), orient="columns")
 
         data_to_insert_into_db = data_from_site[data_from_site['status'] != 'resolved']
@@ -48,7 +48,7 @@ class DrugShortages(Website):
         createTableVar = self.create_tables(subset_of_data_to_insert_int_db)
 
         #purely for testing puposes should be commented out later (belongs in a test case)
-        test_pull_to_test_if_second_obj_will_function = self.getAPI(start_month="5", start_day="11", end_month="5", end_day="11")
+        test_pull_to_test_if_second_obj_will_function = self.getAPI(start_month=5, start_day=11, end_month=5, end_day=11)
         test_data = pd.DataFrame.from_dict(pd.json_normalize(test_pull_to_test_if_second_obj_will_function['data']), orient="columns")
 
         test_subsetDB2 = test_data[[
@@ -92,8 +92,8 @@ class DrugShortages(Website):
             print(row)
 
 
-    def getAPI(self, start_month="01", start_day="01", start_year="2021", end_month="12", end_day="31",
-                                 end_year="2021"):
+    def getAPI(self, start_month=1, start_day=1, start_year=2021, end_month=12, end_day=31,
+                                 end_year=2021):
         """Pulls records from drugshortagescanada.ca.
 
         Pulls records falling within a specified date-range.
@@ -113,12 +113,12 @@ class DrugShortages(Website):
         parameters = {
             "term": "",
             "date_property": "updated_date",
-            "date_range[date_range_start][month]": start_month,
-            "date_range[date_range_start][day]": start_day,
-            "date_range[date_range_start][year]": start_year,
-            "date_range[date_range_end][month]": end_month,
-            "date_range[date_range_end][day]": end_day,
-            "date_range[date_range_end][year]": end_year,
+            "date_range[date_range_start][month]": str(start_month),
+            "date_range[date_range_start][day]": str(start_day),
+            "date_range[date_range_start][year]": str(start_year),
+            "date_range[date_range_end][month]": str(end_month),
+            "date_range[date_range_end][day]": str(end_day),
+            "date_range[date_range_end][year]": str(end_year),
             "filter_type": "_all_",
             "filter_status": "_all_",
         }
@@ -225,16 +225,15 @@ class DrugShortages(Website):
         conn = sqlite3.connect('Shortages.db')
         c = conn.cursor()
         rows_to_append = pd.DataFrame()
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;")
+        available_table = (c.fetchall())
 
-        c.execute("""SELECT name FROM sqlite_master WHERE type='table' AND name='Drug_shortages_and_discontinuations'""")
-
-        # if not None, then table was found
-        if c.fetchall() is not None:
+        # if list of available tables is longer than 0, then table was found
+        if len(available_table) > 0:
             # adapted from https://www.codegrepper.com/code-examples/sql/convert+sqlite+table+to+pandas+dataframe
-            query = conn.execute("SELECT * From Drug_shortages_and_discontinuations")
+            query = c.execute("SELECT * From Drug_shortages_and_discontinuations")
             cols = [column[0] for column in query.description]
             fromDB = pd.DataFrame.from_records(data=query.fetchall(), columns=cols)
-
             # if table exists append the subset onto existing table
             # if the entries are already in the table nothing should be added
             # if the id already exists then do not enter it
@@ -255,7 +254,8 @@ class DrugShortages(Website):
         conn.commit()
         try:
             c.execute("""CREATE TABLE IF NOT EXISTS Resolved_Date
-                        (id_resolved Primary key AUTOINCREMENT, updated_date, status, constraint id_shortage foreign key (id) References Drug_shortages_and_discontinuations(id))""")
+                        (id_resolved integer Primary key, updated_date, status, 
+                        foreign key (id_resolved) References Drug_shortages_and_discontinuations(id))""")
         except Exception as e:
             pass
             return False
