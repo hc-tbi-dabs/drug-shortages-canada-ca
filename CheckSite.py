@@ -62,34 +62,10 @@ class DrugShortages(Website):
             "shortage_reason.fr_reason"]]
 
         # write the subsets into the database
-        self.writeDB(subset_of_data_to_insert_int_db, test_subsetDB2)
-
-        #system out print to check that there is something
-        #written for testing reasons to check that the code works (should be in a test case)
-        conn = sqlite3.connect('Shortages.db')
-        c = conn.cursor()
-        c.execute("SELECT * FROM Drug_shortages_and_discontinuations")
-
-        for row in c.fetchall():
-            print(row)
-
-        c.execute("SELECT * FROM Resolved_Date")
-        print("RESOLVED TB")
-        for row in c.fetchall():
-            print(row)
+        self.writeDB(test_subsetDB2)
 
         # run to remove all record older than X days from the table
         self.cleanup()
-        print("after clean")
-        c.execute("SELECT * FROM Drug_shortages_and_discontinuations")
-
-        for row in c.fetchall():
-            print(row)
-
-        c.execute("SELECT * FROM Resolved_Date")
-        print("RESOLVED TB")
-        for row in c.fetchall():
-            print(row)
 
 
     def getAPI(self, start_month=1, start_day=1, start_year=2021, end_month=12, end_day=31,
@@ -144,7 +120,7 @@ class DrugShortages(Website):
             return None
 
 
-    def writeDB(self, subset1, subset2):
+    def writeDB(self, subset2):
         """Compares two subsets.
         subset1 represents the table in the sqliteDB
         subset2 represents the incoming table from the website
@@ -252,14 +228,14 @@ class DrugShortages(Website):
 
         rows_to_append.to_sql('Drug_shortages_and_discontinuations', conn, if_exists="append")
         conn.commit()
-        try:
-            c.execute("""CREATE TABLE IF NOT EXISTS Resolved_Date
-                        (id_resolved integer Primary key, updated_date, status, 
-                        foreign key (id_resolved) References Drug_shortages_and_discontinuations(id))""")
-        except Exception as e:
-            pass
-            return False
-        conn.commit()
+        #try:
+          #  c.execute("""CREATE TABLE IF NOT EXISTS Resolved_Date
+              #          (id_resolved integer Primary key, id, updated_date, status, company_name, index,
+              #          foreign key (id_resolved) References Drug_shortages_and_discontinuations(id))""")
+        #except Exception as e:
+          #  pass
+          #  return False
+       # conn.commit()
         conn.close()
         return True
 
