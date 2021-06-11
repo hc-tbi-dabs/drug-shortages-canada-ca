@@ -36,19 +36,16 @@ class DrugShortages(Website):
         get_obj_from_drug_shortage_site =self.getAPI(start_month=5, start_day=10, end_month=5, end_day=10)
         data_from_site = pd.DataFrame.from_dict(pd.json_normalize(get_obj_from_drug_shortage_site['data']), orient="columns")
 
-        data_to_insert_into_db = data_from_site[data_from_site['status'] != 'resolved']
-
-        subset_of_data_to_insert_int_db = data_to_insert_into_db[["id", "drug.brand_name", "company_name", "updated_date", "status", "drug_strength",
+        subset_of_data_to_insert_int_db = data_from_site[["id", "drug.brand_name", "company_name", "updated_date", "status", "drug_strength",
                        "shortage_reason.en_reason", "shortage_reason.fr_reason", "en_discontinuation_comments",
                        "fr_discontinuation_comments"]]
-
 
         # only the  first time running this function should be called to initialize the DB
 
         createTableVar = self.create_tables(subset_of_data_to_insert_int_db)
 
         #purely for testing puposes should be commented out later (belongs in a test case)
-        test_pull_to_test_if_second_obj_will_function = self.getAPI(start_month=5, start_day=11, end_month=5, end_day=11)
+        test_pull_to_test_if_second_obj_will_function = self.getAPI(start_month=5, start_day=15, end_month=5, end_day=16)
         test_data = pd.DataFrame.from_dict(pd.json_normalize(test_pull_to_test_if_second_obj_will_function['data']), orient="columns")
 
         test_subsetDB2 = test_data[[
@@ -64,8 +61,20 @@ class DrugShortages(Website):
         # write the subsets into the database
         self.writeDB(test_subsetDB2)
 
-        # run to remove all record older than X days from the table
+        # run to remove all record older than X days from the table and remove any resolved from the shortage table
         self.cleanup()
+        conn = sqlite3.connect('Shortages.db')
+        c = conn.cursor()
+        c.execute("SELECT * FROM Drug_shortages_and_discontinuations")
+
+        for row in c.fetchall():
+            print(row)
+
+        print("Resolved")
+        c.execute("SELECT * FROM Resolved_Date")
+
+        for row in c.fetchall():
+            print(row)
 
 
     def getAPI(self, start_month=1, start_day=1, start_year=2021, end_month=12, end_day=31,
@@ -180,8 +189,19 @@ class DrugShortages(Website):
                 # means that you should just append this row, it is a new entry
                 # adapted from https://pynative.com/python-sqlite-insert-into-table/
                 tableToAppend = tableToAppend.append(row)
+
         tableToAppend.to_sql('Drug_shortages_and_discontinuations', conn, if_exists="append")
-        resolvedTableToAppend.to_sql('Resolved_Date', conn, if_exists="append")
+
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;")
+        available_table = (c.fetchall())
+
+        # if list of available tables has resolved then append, then table was found
+        if 'Resolved_Date' in available_table:
+            resolvedTableToAppend.to_sql('Resolved_Date', conn, if_exists="append")
+        else:
+            # does not have replace with the new one
+            resolvedTableToAppend.to_sql('Resolved_Date', conn, if_exists="replace")
+
         conn.commit()
         return True
 
@@ -263,6 +283,10 @@ class DrugShortages(Website):
 
         sql_delete_query = """DELETE from Resolved_Date where updated_date<= ?"""
         c.execute(sql_delete_query, (time_str_resolved,))
+
+        # data_to_insert_into_db = data_from_site[data_from_site['status'] != 'resolved']
+        sql_delete_query = """DELETE from Drug_shortages_and_discontinuations where status LIKE 'resolved' """
+        c.execute(sql_delete_query)
 
         conn.commit()
         c.close()
