@@ -44,25 +44,32 @@ class DrugShortages(Website):
 
         createTableVar = self.create_tables(subset_of_data_to_insert_int_db)
 
-        #purely for testing puposes should be commented out later (belongs in a test case)
-        test_pull_to_test_if_second_obj_will_function = self.getAPI(start_month=5, start_day=15, end_month=5, end_day=16)
-        test_data = pd.DataFrame.from_dict(pd.json_normalize(test_pull_to_test_if_second_obj_will_function['data']), orient="columns")
+        if createTableVar:
+            self.writeDB(subset_of_data_to_insert_int_db)
+            self.cleanup()
+        else:
+            # there was an error
+            return "there was an error during the writing of the database"
 
-        test_subsetDB2 = test_data[[
-            "id",
-            "drug.brand_name",
-            "company_name",
-            "updated_date",
-            "status",
-            "drug_strength",
-            "shortage_reason.en_reason",
-            "shortage_reason.fr_reason"]]
+        #purely for testing puposes should be commented out later (belongs in a test case)
+        #test_pull_to_test_if_second_obj_will_function = self.getAPI(start_month=5, start_day=15, end_month=5, end_day=16)
+        #test_data = pd.DataFrame.from_dict(pd.json_normalize(test_pull_to_test_if_second_obj_will_function['data']), orient="columns")
+
+        #test_subsetDB2 = test_data[[
+         #   "id",
+          #  "drug.brand_name",
+          #  "company_name",
+          #  "updated_date",
+          #  "status",
+          #  "drug_strength",
+          #  "shortage_reason.en_reason",
+          #  "shortage_reason.fr_reason"]]
 
         # write the subsets into the database
-        self.writeDB(test_subsetDB2)
+        #self.writeDB(test_subsetDB2)
 
         # run to remove all record older than X days from the table and remove any resolved from the shortage table
-        self.cleanup()
+        #self.cleanup()
         conn = sqlite3.connect('Shortages.db')
         c = conn.cursor()
         c.execute("SELECT * FROM Drug_shortages_and_discontinuations")
@@ -171,7 +178,7 @@ class DrugShortages(Website):
                 (data_base_record["drug.brand_name"] == row[["drug.brand_name"]][0]) &
                 (data_base_record["company_name"] == row[["company_name"]][0])]
 
-            if dfIfReocrdUpdated.shape[0] > 0:
+            if dfIfReocrdUpdated.shape[0] > 0 and row[["status"]][0] == 'resolved':
                 # means that this record is found and has been updated
                 # put the id of the drug put the new id put the updated date and
                 # the new status in the resolved_date table
@@ -185,12 +192,13 @@ class DrugShortages(Website):
                      "shortage_reason.fr_reason",
                      "drug.brand_name"]]
                 resolvedTableToAppend = resolvedTableToAppend.append(dfIfReocrdUpdated)
-            else:
+            # else:
                 # means that you should just append this row, it is a new entry
                 # adapted from https://pynative.com/python-sqlite-insert-into-table/
-                tableToAppend = tableToAppend.append(row)
+                # tableToAppend = tableToAppend.append(row)
 
-        tableToAppend.to_sql('Drug_shortages_and_discontinuations', conn, if_exists="append")
+        # tableToAppend.to_sql('Drug_shortages_and_discontinuations', conn, if_exists="append")
+        resolvedTableToAppend = resolvedTableToAppend.drop_duplicates(subset=['id','company_name', 'drug_strength', "drug.brand_name"])
 
         c.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;")
         available_table = (c.fetchall())
@@ -240,7 +248,7 @@ class DrugShortages(Website):
                     (fromDB["company_name"] == row[["company_name"]][0]) & (fromDB["id"] == row[["id"]][0])]
                 if dfIfReocrdUpdated.shape[0] == 0:
                     # there is no row in the DB with this id and drug company then add row to the table
-                    rows_to_append = rows_to_append.append(dfIfReocrdUpdated)
+                    rows_to_append=rows_to_append.append(row)
         else:
             #table not found replace with subset
             subsetDB.to_sql('Drug_shortages_and_discontinuations', conn, if_exists="replace", index=True)
