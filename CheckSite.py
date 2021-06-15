@@ -33,39 +33,43 @@ class Website(ABC, threading.Thread):
 
 class DrugShortages(Website):
     def run(self):
-        get_obj_from_drug_shortage_site =self.getAPI(start_month="5", start_day="10", end_month="5", end_day="10")
+        get_obj_from_drug_shortage_site =self.getAPI(start_month=5, start_day=10, end_month=5, end_day=10)
         data_from_site = pd.DataFrame.from_dict(pd.json_normalize(get_obj_from_drug_shortage_site['data']), orient="columns")
 
-        data_to_insert_into_db = data_from_site[data_from_site['status'] != 'resolved']
-
-        subset_of_data_to_insert_int_db = data_to_insert_into_db[["id", "drug.brand_name", "company_name", "updated_date", "status", "drug_strength",
+        subset_of_data_to_insert_int_db = data_from_site[["id", "drug.brand_name", "company_name", "updated_date", "status", "drug_strength",
                        "shortage_reason.en_reason", "shortage_reason.fr_reason", "en_discontinuation_comments",
                        "fr_discontinuation_comments"]]
-
 
         # only the  first time running this function should be called to initialize the DB
 
         createTableVar = self.create_tables(subset_of_data_to_insert_int_db)
 
-        #purely for testing puposes should be commented out later (belongs in a test case)
-        test_pull_to_test_if_second_obj_will_function = self.getAPI(start_month="5", start_day="11", end_month="5", end_day="11")
-        test_data = pd.DataFrame.from_dict(pd.json_normalize(test_pull_to_test_if_second_obj_will_function['data']), orient="columns")
+        if createTableVar:
+            self.writeDB(subset_of_data_to_insert_int_db)
+            self.cleanup()
+        else:
+            # there was an error
+            return "there was an error during the writing of the database"
 
-        test_subsetDB2 = test_data[[
-            "id",
-            "drug.brand_name",
-            "company_name",
-            "updated_date",
-            "status",
-            "drug_strength",
-            "shortage_reason.en_reason",
-            "shortage_reason.fr_reason"]]
+        #purely for testing puposes should be commented out later (belongs in a test case)
+        #test_pull_to_test_if_second_obj_will_function = self.getAPI(start_month=5, start_day=15, end_month=5, end_day=16)
+        #test_data = pd.DataFrame.from_dict(pd.json_normalize(test_pull_to_test_if_second_obj_will_function['data']), orient="columns")
+
+        #test_subsetDB2 = test_data[[
+         #   "id",
+          #  "drug.brand_name",
+          #  "company_name",
+          #  "updated_date",
+          #  "status",
+          #  "drug_strength",
+          #  "shortage_reason.en_reason",
+          #  "shortage_reason.fr_reason"]]
 
         # write the subsets into the database
-        self.writeDB(subset_of_data_to_insert_int_db, test_subsetDB2)
+        #self.writeDB(test_subsetDB2)
 
-        #system out print to check that there is something
-        #written for testing reasons to check that the code works (should be in a test case)
+        # run to remove all record older than X days from the table and remove any resolved from the shortage table
+        #self.cleanup()
         conn = sqlite3.connect('Shortages.db')
         c = conn.cursor()
         c.execute("SELECT * FROM Drug_shortages_and_discontinuations")
@@ -73,27 +77,15 @@ class DrugShortages(Website):
         for row in c.fetchall():
             print(row)
 
+        print("Resolved")
         c.execute("SELECT * FROM Resolved_Date")
-        print("RESOLVED TB")
-        for row in c.fetchall():
-            print(row)
-
-        # run to remove all record older than X days from the table
-        self.cleanup()
-        print("after clean")
-        c.execute("SELECT * FROM Drug_shortages_and_discontinuations")
 
         for row in c.fetchall():
             print(row)
 
-        c.execute("SELECT * FROM Resolved_Date")
-        print("RESOLVED TB")
-        for row in c.fetchall():
-            print(row)
 
-
-    def getAPI(self, start_month="01", start_day="01", start_year="2021", end_month="12", end_day="31",
-                                 end_year="2021"):
+    def getAPI(self, start_month=1, start_day=1, start_year=2021, end_month=12, end_day=31,
+                                 end_year=2021):
         """Pulls records from drugshortagescanada.ca.
 
         Pulls records falling within a specified date-range.
@@ -113,12 +105,12 @@ class DrugShortages(Website):
         parameters = {
             "term": "",
             "date_property": "updated_date",
-            "date_range[date_range_start][month]": start_month,
-            "date_range[date_range_start][day]": start_day,
-            "date_range[date_range_start][year]": start_year,
-            "date_range[date_range_end][month]": end_month,
-            "date_range[date_range_end][day]": end_day,
-            "date_range[date_range_end][year]": end_year,
+            "date_range[date_range_start][month]": str(start_month),
+            "date_range[date_range_start][day]": str(start_day),
+            "date_range[date_range_start][year]": str(start_year),
+            "date_range[date_range_end][month]": str(end_month),
+            "date_range[date_range_end][day]": str(end_day),
+            "date_range[date_range_end][year]": str(end_year),
             "filter_type": "_all_",
             "filter_status": "_all_",
         }
@@ -144,7 +136,7 @@ class DrugShortages(Website):
             return None
 
 
-    def writeDB(self, subset1, subset2):
+    def writeDB(self, subset2):
         """Compares two subsets.
         subset1 represents the table in the sqliteDB
         subset2 represents the incoming table from the website
@@ -186,7 +178,7 @@ class DrugShortages(Website):
                 (data_base_record["drug.brand_name"] == row[["drug.brand_name"]][0]) &
                 (data_base_record["company_name"] == row[["company_name"]][0])]
 
-            if dfIfReocrdUpdated.shape[0] > 0:
+            if dfIfReocrdUpdated.shape[0] > 0 and row[["status"]][0] == 'resolved':
                 # means that this record is found and has been updated
                 # put the id of the drug put the new id put the updated date and
                 # the new status in the resolved_date table
@@ -200,12 +192,24 @@ class DrugShortages(Website):
                      "shortage_reason.fr_reason",
                      "drug.brand_name"]]
                 resolvedTableToAppend = resolvedTableToAppend.append(dfIfReocrdUpdated)
-            else:
+            # else:
                 # means that you should just append this row, it is a new entry
                 # adapted from https://pynative.com/python-sqlite-insert-into-table/
-                tableToAppend = tableToAppend.append(row)
-        tableToAppend.to_sql('Drug_shortages_and_discontinuations', conn, if_exists="append")
-        resolvedTableToAppend.to_sql('Resolved_Date', conn, if_exists="append")
+                # tableToAppend = tableToAppend.append(row)
+
+        # tableToAppend.to_sql('Drug_shortages_and_discontinuations', conn, if_exists="append")
+        resolvedTableToAppend = resolvedTableToAppend.drop_duplicates(subset=['id','company_name', 'drug_strength', "drug.brand_name"])
+
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;")
+        available_table = (c.fetchall())
+
+        # if list of available tables has resolved then append, then table was found
+        if 'Resolved_Date' in available_table:
+            resolvedTableToAppend.to_sql('Resolved_Date', conn, if_exists="append")
+        else:
+            # does not have replace with the new one
+            resolvedTableToAppend.to_sql('Resolved_Date', conn, if_exists="replace")
+
         conn.commit()
         return True
 
@@ -225,16 +229,15 @@ class DrugShortages(Website):
         conn = sqlite3.connect('Shortages.db')
         c = conn.cursor()
         rows_to_append = pd.DataFrame()
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;")
+        available_table = (c.fetchall())
 
-        c.execute("""SELECT name FROM sqlite_master WHERE type='table' AND name='Drug_shortages_and_discontinuations'""")
-
-        # if not None, then table was found
-        if c.fetchall() is not None:
+        # if list of available tables is longer than 0, then table was found
+        if len(available_table) > 0:
             # adapted from https://www.codegrepper.com/code-examples/sql/convert+sqlite+table+to+pandas+dataframe
-            query = conn.execute("SELECT * From Drug_shortages_and_discontinuations")
+            query = c.execute("SELECT * From Drug_shortages_and_discontinuations")
             cols = [column[0] for column in query.description]
             fromDB = pd.DataFrame.from_records(data=query.fetchall(), columns=cols)
-
             # if table exists append the subset onto existing table
             # if the entries are already in the table nothing should be added
             # if the id already exists then do not enter it
@@ -245,7 +248,7 @@ class DrugShortages(Website):
                     (fromDB["company_name"] == row[["company_name"]][0]) & (fromDB["id"] == row[["id"]][0])]
                 if dfIfReocrdUpdated.shape[0] == 0:
                     # there is no row in the DB with this id and drug company then add row to the table
-                    rows_to_append = rows_to_append.append(dfIfReocrdUpdated)
+                    rows_to_append=rows_to_append.append(row)
         else:
             #table not found replace with subset
             subsetDB.to_sql('Drug_shortages_and_discontinuations', conn, if_exists="replace", index=True)
@@ -253,13 +256,14 @@ class DrugShortages(Website):
 
         rows_to_append.to_sql('Drug_shortages_and_discontinuations', conn, if_exists="append")
         conn.commit()
-        try:
-            c.execute("""CREATE TABLE IF NOT EXISTS Resolved_Date
-                        (id_resolved Primary key AUTOINCREMENT, updated_date, status, constraint id_shortage foreign key (id) References Drug_shortages_and_discontinuations(id))""")
-        except Exception as e:
-            pass
-            return False
-        conn.commit()
+        #try:
+          #  c.execute("""CREATE TABLE IF NOT EXISTS Resolved_Date
+              #          (id_resolved integer Primary key, id, updated_date, status, company_name, index,
+              #          foreign key (id_resolved) References Drug_shortages_and_discontinuations(id))""")
+        #except Exception as e:
+          #  pass
+          #  return False
+       # conn.commit()
         conn.close()
         return True
 
@@ -287,6 +291,10 @@ class DrugShortages(Website):
 
         sql_delete_query = """DELETE from Resolved_Date where updated_date<= ?"""
         c.execute(sql_delete_query, (time_str_resolved,))
+
+        # data_to_insert_into_db = data_from_site[data_from_site['status'] != 'resolved']
+        sql_delete_query = """DELETE from Drug_shortages_and_discontinuations where status LIKE 'resolved' """
+        c.execute(sql_delete_query)
 
         conn.commit()
         c.close()
