@@ -20,3 +20,11 @@ Assumptions and observations about drug shortages cite
 
 ## ERD Diagram
 ![image](https://user-images.githubusercontent.com/65190279/121731757-f9e00980-cab6-11eb-8bac-479cbc66d9bf.png)
+
+| Function	|Returns	|Inherits function from parent class (Y/N)|	Variables passed in	|Description|
+| ----------- | ----------- | ----------- | ----------- |----------- |
+|run	|Error if writeDB does not execute|	Y|	self|	Run is the execution of the thread that is called. It calls the other the classes enforced by the Website abstract class.|
+|getAPI	|Object retuned from site|	Y	|start_month, start_day, end_month, end_day, start_year, end_year|	To obtain the JSON object from the appropriate website.|
+|writeDB|		|Y|	Data frame to insert into the database|	Take the JSON object turn into a dataframe. Pass the dataframe into the function and check if the entry is already in the database, if it is then it should be appended to the resolved table. If it has not been found then put it in the drug_shortages_and_discontinuations table.| 
+|createTables|		|N|	Data frame to insert into the database|	If the table drug_shortages_and_discontinuations exists then append new entries and if does not create the table.|
+|cleanup	|	|Y|		|Delete all rows where the updated date is less that the limit in both the drug_shortages_and_discontinuations table and the Resolved_Date table. Delete all rows from drug_shortages_and_discontinuations table where the status is resolved.|
