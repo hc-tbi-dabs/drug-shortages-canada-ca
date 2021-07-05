@@ -5,3 +5,5 @@
 
 /shelf/
 /workspace.xml
+.env
+.venv

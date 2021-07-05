@@ -8,6 +8,15 @@ import sqlite3
 import pandas as pd
 import datetime
 from abc import ABC, abstractmethod
+import os
+from os.path import join, dirname
+from dotenv import load_dotenv
+
+dotenv_path = join(dirname(__file__), '.env')
+load_dotenv(dotenv_path)
+
+EMAIL = os.environ.get('EMAIL')
+PASSWORD = os.environ.get('PASSWORD')
 
 class Website(ABC, threading.Thread):
     @abstractmethod
@@ -116,8 +125,8 @@ class DrugShortages(Website):
         }
 
         login_request = requests.post('https://www.drugshortagescanada.ca/api/v1/login',
-                                      data={"email": "bryan.paget@canada.ca",
-                                            "password": "Y6yzY7QHL%ZzPhjtMT6bTND%z"})
+                                      data={"email": EMAIL,
+                                            "password": PASSWORD})
 
         if login_request.status_code == 200:
             authToken = login_request.headers['auth-token']
