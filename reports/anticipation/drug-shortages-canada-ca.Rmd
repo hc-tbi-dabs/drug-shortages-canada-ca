@@ -1,0 +1,304 @@
+---
+title: "Drug Shortages Analysis"
+author: "Bryan Paget"
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+includes:
+  after_body: footer.html
+---
+
+<style>
+  div.blue {
+    background-color: #e6f0ff; 
+    border-radius: 4px;
+    padding: 16px;
+  }
+</style>
+
+<div class = "blue">
+
+#### Question
+
+a) Using data from [Drug Shortages Canada](https://www.drugshortagescanada.ca/) and [Drug Product Database (DPD)](https://www.canada.ca/en/health-canada/services/drugs-health-products/drug-products/drug-product-database/what-data-extract-drug-product-database.html), first identify the number of actual drug shortages reported to Health Canada between June 01 2019 and June 01 2021
+
+b) Next, identify the proportion of the reports found in a) that did not have a prior report of an anticipated or actual shortage within a 12-month period for the same drug. 
+
+c) For those drugs that had the type of report that was of concern in b), what was the average age on the market?
+
+</div>
+
+```{r settings-and-import-libraries, message=FALSE, warning=FALSE, include=TRUE, paged.print=FALSE, results='hide'}
+library(tidyverse)
+library(docstring)
+library(magrittr)
+library(janitor)
+library(lubridate)
+library(rdrugshortages)
+
+#' This is the download location of the data we are interested in from the Drug Product Database:
+
+dpd_file_location <- "https://www.canada.ca/content/dam/hc-sc/documents/services/drug-product-database/allfiles.zip"
+
+#' Start and end dates for Drug Shortages Canada Web API:
+
+my_start_date <- ymd(20190601, tz = "America/Toronto")
+my_end_date <- ymd(20210601, tz = "America/Toronto")
+
+#' Create date interval object, used for filtering records after we've pulled them using the API:
+
+my_date_range <- interval(start = my_start_date, end = my_end_date, tzone = "America/Toronto")
+
+#' The tables from the Drug Product Database don't come with column names, they are provided here:
+
+coltypes_status <- cols(
+  col_double(),
+  col_character(),
+  col_character(),
+  col_character(),
+  col_character(),
+  col_logical(),
+  col_logical()
+)
+
+colnames_status <- c(
+  "DRUG_CODE",
+  "CURRENT_STATUS_FLAG",
+  "STATUS",
+  "HISTORY_DATE",
+  "STATUS_F",
+  "LOT_NUMBER",
+  "EXPIRATION_DATE"
+)
+
+coltypes_drug <- cols(
+  col_double(),
+  col_character(),
+  col_character(),
+  col_character(),
+  col_character(),
+  col_character(),
+  col_character(),
+  col_character(),
+  col_double(),
+  col_character(),
+  col_character(),
+  col_character(),
+  col_character(),
+  col_character()
+)
+
+colnames_drug <- c(
+  "DRUG_CODE",
+  "PRODUCT_CATEGORIZATION",
+  "CLASS",
+  "DRUG_IDENTIFICATION_NUMBER",
+  "BRAND_NAME",
+  "DESCRIPTOR",
+  "PEDIATRIC_FLAG",
+  "ACCESSION_NUMBER",
+  "NUMBER_OF_AIS",
+  "LAST_UPDATE_DATE",
+  "AI_GROUP_NO",
+  "CLASS_F",
+  "BRAND_NAME_F",
+  "DESCRIPTOR_F"
+)
+
+```
+
+<br>
+
+## Retrieving Data
+
+I'm going to start by pulling data from [Drug Shortages Canada](https://www.drugshortagescanada.ca/) using it's API. For more information about the API, check out [the API's documentation](https://www.drugshortagescanada.ca/blog/52).
+
+There is an `R` package called [`rdrugshortages`](https://github.com/pipitone/rdrugshortages), I'm going to use that. Later I'll filter the data to exclude records added outside the following date range: `r my_start_date` to `r my_end_date`.
+
+So let's go ahead and get some drug shortages data:
+
+```{r import-data, message=TRUE, warning=TRUE, cache=TRUE}
+drug_shortages_data <- dsc_search()
+```
+
+I'm going to quickly format some columns as dates:
+
+```{r fixup-types}
+drug_shortages_data$created_date %<>% as.Date()
+drug_shortages_data$anticipated_start_date %<>% as.Date()
+drug_shortages_data$actual_start_date %<>% as.Date()
+```
+
+It's less elegant, but for the Drug Product Database (DPD), we have to download text files, but it's not so bad.
+
+```{r download-from-dpd, echo=TRUE}
+temp <- tempfile()
+
+download.file(dpd_file_location, temp)
+
+dpd_drug <- read_csv(
+  file = unz(temp, "drug.txt"),
+  col_names = colnames_drug,
+  col_types = coltypes_drug)
+
+dpd_status <- read_csv(
+  file = unz(temp, "status.txt"),
+  col_names = colnames_status,
+  col_types = coltypes_status)
+
+unlink(temp)
+```
+
+I'm also going to select a subset of the columns found in the data. The data contain `r drug_shortages_data %>% length()` columns.
+
+I will select a small number of colunms ...
+
+```{r select-columns}
+drug_shortages_data %<>%
+  select(din, created_date, anticipated_start_date, estimated_end_date, actual_start_date, actual_end_date, decision_reversal, updated_date, status, en_comments, en_drug_brand_name, en_drug_common_name, resolved, avoided, advance, hc_updated_date, en_supply_disruption_mitigation, en_discontinuation_comments, hc_en_comments, drug.current_status, drug.company.created_date, type.id, type.label)
+```
+
+... and subset the data to within the date range specified at the top of this document. I'm interested in the following date range: `r my_start_date` to `r my_end_date`.
+
+```{r filter-by-dates}
+drug_shortages_data_within_range <- drug_shortages_data %>%
+  filter(ymd(created_date) %within% my_date_range)
+```
+
+<div class = "blue">
+
+According to the code above, there were `r nrow(drug_shortages_data_within_range)` shortage reports between `r my_start_date` and `r my_end_date`.
+
+</div>
+
+<br>
+
+## Filtering Data
+
+Since I'm interested in the *percentage of actual drug shortage reports to Health Canada that did not have a prior report of an anticipated or actual shortage within a 12-month period for the same drug*, I'm going to filter through the data to find the subsets of interest. 
+
+For instance I'd like to see the number of 
+
+1. actual shortage reports
+2. actual shortage reports that did not have a prior report of an anticipated or actual shortage within a 12-month period for the same drug
+
+***
+
+### Finding the Actual Shortages
+
+I'm going to filter through the data I've pulled from the website and keep only the records that have an `actual_start_date`. I'm assuming this means the shortage actually occured.
+
+```{r filter-data-1}
+actual_shortage <- drug_shortages_data_within_range %>%
+  filter(!is.na(actual_start_date))
+```
+
+<div class = "blue">
+
+According to the code above, there were `r nrow(actual_shortage)` actual shortages.
+
+</div>
+
+***
+
+<br>
+
+### Finding the Unanticipated Shortages
+
+Next I'm going to find the unanticipated shortages by filtering the data from the first part, keeping only the records that failed to include an anticipated start date for the shortage.
+
+```{r filter-data-2}
+did_not_anticipate_at_all <- actual_shortage %>%
+  filter(is.na(anticipated_start_date))
+```
+
+<div class = "blue">
+
+According to the code above, there were `r nrow(did_not_anticipate_at_all)` unanticipated shortages.
+
+</div>
+
+***
+
+### Finding Inaccurately Reported Shortages
+
+These are shortages that were not anticipated within a 12 month time-frame.
+
+```{r filter-data-3}
+did_not_anticipate_within_12_mo <- actual_shortage %>%
+  filter(!is.na(anticipated_start_date)) %>%
+  filter(abs(actual_start_date %--% anticipated_start_date) > 365)
+```
+
+<div class = "blue">
+
+According to the code above, there were `r nrow(did_not_anticipate_within_12_mo)` inaccurately anticipated shortages.
+
+</div>
+
+<br>
+
+### Age on Market
+
+```{r age-on-market}
+my_drug_product_database_status_marketed <- actual_shortage %>%
+  filter(drug.current_status == "MARKETED") %>%
+  mutate(HISTORY_DATE = as.Date(drug.company.created_date)) %>%
+  mutate(AGE_ON_MARKET = lubridate::today() - HISTORY_DATE)
+```
+
+<br>
+
+## Conclusion
+
+```{r}
+
+#' Mapping between DIN and DRUG_CODE:
+
+din_drug_code_mapping <- dpd_drug %>% select(DRUG_CODE, DRUG_IDENTIFICATION_NUMBER)
+
+#' Add DIN to table of interest:
+
+my_drug_product_database_all_files_status <- merge(dpd_status,
+                                                   din_drug_code_mapping,
+                                                   by.y = "DRUG_CODE")
+
+
+#' Ensure types are the same:
+my_drug_product_database_all_files_status$DRUG_IDENTIFICATION_NUMBER %<>%
+  as.character(my_drug_product_database_all_files_status$DRUG_IDENTIFICATION_NUMBER)
+
+did_not_anticipate_within_12_mo$din %<>%
+  as.character(did_not_anticipate_within_12_mo$din) %>%
+  str_pad(8, pad = "0")
+
+my_drug_product_database_status <- merge(my_drug_product_database_all_files_status,
+                                         did_not_anticipate_within_12_mo,
+                                         by.x = "DRUG_IDENTIFICATION_NUMBER",
+                                         by.y = "din")
+
+
+#' Find relevant data and calculate time on market:
+
+my_drug_product_database_status_marketed <- my_drug_product_database_status %>%
+  filter(STATUS == "MARKETED") %>%
+  mutate(HISTORY_DATE = dmy(HISTORY_DATE)) %>%
+  mutate(AGE_ON_MARKET = lubridate::today() - HISTORY_DATE)
+
+print("For those drugs that reported only an actual shortage, what was the average age on the market?")
+print(my_drug_product_database_status_marketed$AGE_ON_MARKET %>% mean())
+
+```
+
+
+<div class = "blue">
+
+- There were `r nrow(actual_shortage)` actual shortages.
+- There were `r nrow(did_not_anticipate_at_all)` unanticipated shortages.
+- There were `r nrow(did_not_anticipate_within_12_mo)` inaccurately anticipated shortages.
+- The proportion for the above is `r did_not_anticipate_within_12_mo %>% nrow() / actual_shortage %>% nrow()`.
+- The average age on the market for these drugs was `r mean(my_drug_product_database_status_marketed$AGE_ON_MARKET)` days.
+
+</div>

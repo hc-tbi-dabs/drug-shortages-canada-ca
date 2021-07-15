@@ -3,7 +3,13 @@
 .RData
 .Ruserdata
 
+.Renviron
+
 /shelf/
 /workspace.xml
 .env
 .venv
+
+reports/**/*files/
+reports/**/rsconnect/
+reports/**/*cache
