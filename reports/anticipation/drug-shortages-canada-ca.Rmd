@@ -12,22 +12,20 @@ includes:
 
 <style>
   .blue {
-    background-color: #e6f0ff; 
     border-radius: 4px;
     padding: 16px;
     font-size: large;
+    font-weight: 800;
   }
 </style>
 
 <div class = "blue">
 
-#### Question
+## Question
 
-a) Using data from [Drug Shortages Canada](https://www.drugshortagescanada.ca/) and [Drug Product Database (DPD)](https://www.canada.ca/en/health-canada/services/drugs-health-products/drug-products/drug-product-database/what-data-extract-drug-product-database.html), first identify the number of actual drug shortages reported to Health Canada between June 01 2019 and June 01 2021.
+a) By using the data available on [Drug Shortages Canada](https://www.drugshortagescanada.ca/) and [Drug Product Database (DPD)](https://www.canada.ca/en/health-canada/services/drugs-health-products/drug-products/drug-product-database/what-data-extract-drug-product-database.html), identify the percentage of actual drug shortage reports to Health Canada that did not have a prior report of an anticipated or actual shortage within a 12-month period for the same drug. Restrict your collection of data to the period June 2019 to June 2021.
 
-b) Next, identify the proportion of drugs found in a) that did not have a prior report of an anticipated or actual shortage within a 12-month period for the same drug. 
-
-c) For those drugs that had the type of report that was of concern in b), what was the average age on the market?
+b) For those drugs that had the type of report that was of concern in a), what was the average age on the market?
 
 </div>
 
@@ -201,11 +199,13 @@ For instance I'd like to see the number of
 
 ### Finding the Actual Shortages
 
-I'm going to filter through the data I've pulled from the website and keep only the records that have an `actual_start_date`. I'm assuming this means the shortage actually occured.
+I'm going to filter through the data I've pulled from the website and keep only the records that have a `status` of `active_confirmed`.
 
 ```{r filter-data-1}
 actual_shortage <- drug_shortages_data_within_range %>%
-  filter(!is.na(actual_start_date))
+  filter(status == "active_confirmed")
+
+dins_for_actual_shortages <- actual_shortage$din %>% unique()
 ```
 
 <div class = "blue">
@@ -218,67 +218,24 @@ According to the code above, there were `r nrow(actual_shortage)` actual shortag
 
 <br>
 
-### Finding the Unanticipated Shortages
+### Drug Shortages Without a Prior Report within a 12 Month Period
 
-Next I'm going to find the unanticipated shortages by filtering the data from the first part, keeping only the records that failed to include an anticipated start date for the shortage.
+Next I'm going to keep only drug shortage reports to Health Canada that did not have a prior report of an anticipated or actual shortage within a 12-month period for the same drug. This means I'll take the data, keep only the drugs of interest from the previous step, keep only the records that had either an active or anticipated shortage and then drop anything that is more than 12 months old.
 
 ```{r filter-data-2}
-did_not_anticipate_at_all <- actual_shortage %>%
-  filter(is.na(anticipated_start_date)) %>%
-  filter(!is.na(actual_start_date))
-```
-
-```{r filter-data-2.1}
-did_not_anticipate_at_all <- actual_shortage %>%
-  filter(is.na(anticipated_start_date)) %>%
-  filter(!is.na(actual_start_date))
-
-actual_shortage %>%
-  group_by(en_drug_brand_name) %>%
-  summarise()
-  
-prior_report <- function(table) {
-  
-  #' table containing reports with the same din.
-  #' find the
-  
-  #' step 1: get the drugs that had an actual shortage
-  #' step 2: get check if they have anticipated shortage reports in the past year,
-  #' step 3: group by drug name
-  #' step 4: check each drug, see if it had a prior report
-  
-  
-}
-
-
+more_than_12_months <- drug_shortages_data_within_range %>%
+  filter(din %in% dins_for_actual_shortages) %>%
+  filter(status %in% c("active_confirmed", "anticipated_shortage")) %>%
+  filter(lubridate::today() - created_date > 365)
 ```
 
 <div class = "blue">
 
-According to the code above, there were `r nrow(did_not_anticipate_at_all)` unanticipated shortages.
+According to the code above, there were `r nrow(more_than_12_months)` shortages more than 12 months old.
 
 </div>
 
 ***
-
-### Finding Inaccurately Reported Shortages
-
-These are shortages that were not anticipated within a 12 month time-frame.
-
-```{r filter-data-3}
-did_not_anticipate_within_12_mo <- actual_shortage %>%
-  filter(!is.na(anticipated_start_date)) %>%
-  filter(!is.na(actual_start_date)) %>%
-  filter(abs(actual_start_date - anticipated_start_date) > 365)
-```
-
-<div class = "blue">
-
-According to the code above, there were `r nrow(did_not_anticipate_within_12_mo)` inaccurately anticipated shortages.
-
-</div>
-
-<br>
 
 <br>
 
@@ -303,7 +260,7 @@ my_drug_product_database_all_files_status$DRUG_IDENTIFICATION_NUMBER %<>%
 
 #' Drugs of interest:
 
-drugs_of_interest <- rbind(did_not_anticipate_within_12_mo, did_not_anticipate_at_all)
+drugs_of_interest <- more_than_12_months
 
 drugs_of_interest$din %<>%
   as.character(drugs_of_interest$din) %>%
@@ -325,9 +282,9 @@ my_drug_product_database_status_marketed <- my_drug_product_database_status %>%
 
 <div class = "blue">
 
-According to the code above, we can say there were `r nrow(drug_shortages_data_within_range)` shortage reports between the dates of `r my_start_date` and `r my_end_date`. Of those reports, there were `r nrow(actual_shortage)` actual shortages.
+According to the code above, there were `r nrow(drug_shortages_data_within_range)` shortage reports between the dates of `r my_start_date` and `r my_end_date`. Of those reports, there were `r nrow(actual_shortage)` actual shortages.
 
-Of the actual shortages, there were `r nrow(did_not_anticipate_at_all)` unanticipated shortages. This means the drug did not have any previous shortage anticipation whatsoever. Of the actual shortages, there were `r nrow(did_not_anticipate_within_12_mo)` inaccurately anticipated shortages. This means the drug did have a shortage report in the past but it was reported more than 12 months before an actual shortage.
+Of the actual shortages, there were `r nrow(more_than_12_months)` shortages more than 12 months old.
 
 </div>
 
@@ -337,7 +294,7 @@ Of the actual shortages, there were `r nrow(did_not_anticipate_at_all)` unantici
 
 <div class = "blue">
 
-The proportion for the above is `r (nrow(did_not_anticipate_within_12_mo) + nrow(did_not_anticipate_at_all)) / (actual_shortage %>% nrow())`.
+The proportion for the above is `r nrow(more_than_12_months) / nrow(actual_shortage)`.
 
 <br>
 
